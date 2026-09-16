@@ -45,7 +45,9 @@ export interface Course {
   id: string;
   title: string;
   places: Place[];
-  totalCost: number; // 1인 합계
+  // 인원 전체 합계(원). courseCost 가 1인 비용 합에 partySize 를 곱해 넣음.
+  // 화면 근거 카드는 이 값을 partySize 로 나눠 1인 기준으로 표시함 — 두 기준이 섞이지 않게 할 것.
+  totalCost: number;
   totalMin: number; // 이동 포함 소요(분)
   score: number; // 0~100
   reason: Reason;
