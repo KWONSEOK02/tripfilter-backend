@@ -1,0 +1,38 @@
+name: ci
+
+# 커밋 전 검증 루프를 main push와 PR에서 자동 실행함.
+# 정본 루프는 typecheck 더하기 build 더하기 계약 검증 (.agents/rules/verification-loop.md).
+# live-check은 실행 중 서버가 필요하므로 별도 step에서 5199 포트로 기동한 뒤 실행함.
+# 기동 대기는 외부 패키지 없이 /health 폴링으로 처리함.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: typecheck + build + live-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Start server and run live-check
+        env:
+          PORT: "5199"
+          BASE_URL: http://127.0.0.1:5199
+        run: |
+          npx tsx src/server.ts &
+          node -e "const t=Date.now();(async()=>{while(Date.now()-t<30000){try{const r=await fetch('http://127.0.0.1:5199/health');if(r.ok){console.log('server ready');process.exit(0)}}catch{await new Promise(r=>setTimeout(r,500))}}console.error('server did not start');process.exit(1)})()"
+          npm run check
