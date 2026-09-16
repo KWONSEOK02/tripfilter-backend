@@ -30,6 +30,20 @@ const base = { area: "해운대", timeHours: 5, budget: 70000, partySize: 2, int
   check("예산 준수", json.courses.every((c) => c.totalCost <= budgetTotal));
   check("시간 준수", json.courses.every((c) => c.totalMin <= base.timeHours * 60));
   check("근거 카드 3줄", json.courses.every((c) => c.reason.budget && c.reason.time && c.reason.safety));
+
+  // ADR-008: 4요소 재정규화 수식과 응답 점수 일치. 배지와 출처 계수가 섞이면 어긋남
+  const T = base.timeHours * 60;
+  const expected = (c) => {
+    const n = c.places.length;
+    const fit = c.places.filter((p) => base.interests.includes(p.interest)).length / n;
+    const rep = c.places.reduce((s, p) => s + p.rating, 0) / n / 5;
+    const costEff = Math.max(0, 1 - c.totalCost / budgetTotal);
+    const timeEff = Math.max(0, 1 - Math.abs(T - c.totalMin) / T);
+    return Math.round(((fit * 0.3 + rep * 0.2 + costEff * 0.2 + timeEff * 0.15) / 0.85) * 100);
+  };
+  check("점수 = 4요소 재정규화 수식", json.courses.every((c) => c.score === expected(c)));
+  check("점수 0~100 정수", json.courses.every((c) => Number.isInteger(c.score) && c.score >= 0 && c.score <= 100));
+  check("근거에 검증·공식 출처 주장 없음", json.courses.every((c) => !/검증 배지|TourAPI|한국관광공사/.test(c.reason.safety)));
 }
 
 // 2. 제외 관심사 반영

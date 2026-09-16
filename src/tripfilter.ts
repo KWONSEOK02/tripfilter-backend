@@ -30,8 +30,9 @@ export interface Place {
   indoor: boolean;
   rating: number; // 외부 평판 0~5
   reviewCount: number;
-  safetyBadge: "verified" | "info" | "caution"; // 안전·검증 신호
-  source: "TourAPI" | "TourAPI+Kakao"; // 데이터 출처(신뢰도)
+  // legacy: 수동 태깅값이라 표시와 점수에 쓰지 않음(ADR-008). v1 호환을 위해 필드만 유지함
+  safetyBadge: "verified" | "info" | "caution";
+  source: "TourAPI" | "TourAPI+Kakao"; // mock 수동값. 점수에 쓰지 않음(ADR-008)
 }
 
 // 추천 근거 카드 3줄(제안서 5단계).
@@ -109,9 +110,6 @@ export function fetchAreas(): Area[] {
   });
 }
 
-const SAFETY_TRUST: Record<Place["safetyBadge"], number> = { verified: 1, info: 0.7, caution: 0.4 };
-const SOURCE_TRUST: Record<Place["source"], number> = { TourAPI: 1, "TourAPI+Kakao": 0.9 };
-
 // 좌표 한 쌍. Place와 Area 기준점을 같은 함수로 다루기 위함.
 interface Coord {
   mapx: number;
@@ -150,7 +148,9 @@ function courseCost(places: Place[], partySize: number): number {
   return places.reduce((s, p) => s + p.avgCost, 0) * partySize;
 }
 
-// 제안서 4단계 점수화 — 취향·평판·가격효율·이동효율·데이터신뢰도 가중합(0~100).
+// 4요소 가중합(0~100) (ADR-008). ADR-003 의 데이터 신뢰도 0.15 는 증빙 없는 수동 배지라 제외하고
+// 나머지 네 요소의 상대 비중을 유지한 채 0.85 로 나눠 재정규화함.
+// 증빙이 확보되기 전까지 배지와 출처 계수를 되살리지 않음.
 function scoreCourse(places: Place[], input: FilterInput, origin?: Coord): number {
   const budgetTotal = input.budget * input.partySize;
   const cost = courseCost(places, input.partySize);
@@ -161,10 +161,8 @@ function scoreCourse(places: Place[], input: FilterInput, origin?: Coord): numbe
   const rep = places.reduce((s, p) => s + p.rating, 0) / places.length / 5; // 외부 평판
   const costEff = budgetTotal === 0 ? 1 : Math.max(0, 1 - cost / budgetTotal); // 가격 효율(예산 대비 여유)
   const timeEff = Math.max(0, 1 - Math.abs(timeBudget - min) / timeBudget); // 이동 효율(시간 적합)
-  const trust =
-    places.reduce((s, p) => s + SAFETY_TRUST[p.safetyBadge] * SOURCE_TRUST[p.source], 0) / places.length; // 데이터 신뢰도
 
-  const score = fit * 0.3 + rep * 0.2 + costEff * 0.2 + timeEff * 0.15 + trust * 0.15;
+  const score = (fit * 0.3 + rep * 0.2 + costEff * 0.2 + timeEff * 0.15) / 0.85;
   return Math.round(score * 100);
 }
 
@@ -172,7 +170,6 @@ function reasonFor(places: Place[], input: FilterInput, origin?: Coord, area?: A
   const cost = courseCost(places, input.partySize);
   const min = courseMinutes(places, origin);
   const budgetTotal = input.budget * input.partySize;
-  const verified = places.filter((p) => p.safetyBadge === "verified").length;
 
   // 범위가 넓어진 사실을 결과가 숨기지 않음 (ADR-005 Decision 6).
   // 표기 형태는 UX 실증 근거 없이 우리 판단으로 정한 것임.
@@ -188,7 +185,8 @@ function reasonFor(places: Place[], input: FilterInput, origin?: Coord, area?: A
   return {
     budget: cost === 0 ? `무료 코스 (예산 ${budgetTotal.toLocaleString()}원 내)` : `1인 ${(cost / input.partySize).toLocaleString()}원 · 예산의 ${Math.round((cost / budgetTotal) * 100)}%`,
     time: `약 ${Math.floor(min / 60)}시간 ${min % 60}분 (가용 ${input.timeHours}시간 내)${outsideNote}`,
-    safety: `검증 배지 ${verified}/${places.length} · 출처 한국관광공사 TourAPI`,
+    // 데이터 성격과 검증 범위 안내임. 점수 근거가 아님 (ADR-008). 실연동 후 수신 범위에 맞춰 바꿈
+    safety: "시연용 예시 데이터 · 장소 안전성 미검증",
   };
 }
 
